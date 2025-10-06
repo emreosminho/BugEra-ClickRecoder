@@ -1,0 +1,43 @@
+{
+  "manifest_version": 3,
+  "name": "Click Recorder",
+  "version": "1.0.0",
+  "description": "Record user clicks on web pages and export as JSON.",
+  "action": {
+    "default_title": "Click Recorder",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "8744719.png",
+      "32": "8744719.png"
+    }
+  },
+  "icons": {
+    "16": "8744719.png",
+    "32": "8744719.png",
+    "48": "8744719.png",
+    "128": "8744719.png"
+  },
+  "permissions": [
+    "tabs",
+    "storage",
+    "webNavigation"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["utils.js", "content.js"],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; style-src 'self' 'unsafe-inline'"
+  }
+}
+
