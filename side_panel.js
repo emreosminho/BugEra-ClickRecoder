@@ -178,26 +178,44 @@ if (btnSelectTab) {
   btnSelectTab.addEventListener('click', async () => {
     console.log('[Side Panel] Select tab button clicked');
     try {
-      // Get all tabs in current window
-      const allTabs = await chrome.tabs.query({ currentWindow: true });
+      // First, try to get the currently active tab
+      const activeTabs = await chrome.tabs.query({ active: true, currentWindow: true });
       
-      // Filter non-extension tabs
-      const webTabs = allTabs.filter(tab => 
-        tab.url && 
-        !tab.url.startsWith('chrome-extension://') && 
-        !tab.url.startsWith('chrome://') &&
-        !tab.url.startsWith('about:')
-      );
+      let selectedTab = null;
       
-      if (webTabs.length === 0) {
-        alert('Kayıt yapılabilecek bir web sayfası sekmesi bulunamadı!\n\nLütfen bir web sayfası açın.');
-        return;
+      // Check if active tab is a valid web page
+      if (activeTabs.length > 0) {
+        const activeTab = activeTabs[0];
+        if (activeTab.url && 
+            !activeTab.url.startsWith('chrome-extension://') && 
+            !activeTab.url.startsWith('chrome://') &&
+            !activeTab.url.startsWith('about:')) {
+          selectedTab = activeTab;
+          console.log('[Side Panel] Active tab is a valid web page:', selectedTab.id, selectedTab.url);
+        }
       }
       
-      // Use first web tab (or we could make this a dropdown later)
-      const selectedTab = webTabs[0];
+      // If active tab is not valid, find first valid web tab
+      if (!selectedTab) {
+        const allTabs = await chrome.tabs.query({ currentWindow: true });
+        const webTabs = allTabs.filter(tab => 
+          tab.url && 
+          !tab.url.startsWith('chrome-extension://') && 
+          !tab.url.startsWith('chrome://') &&
+          !tab.url.startsWith('about:')
+        );
+        
+        if (webTabs.length === 0) {
+          alert('Kayıt yapılabilecek bir web sayfası sekmesi bulunamadı!\n\nLütfen bir web sayfası açın.');
+          return;
+        }
+        
+        selectedTab = webTabs[0];
+        console.log('[Side Panel] Using first available web tab:', selectedTab.id, selectedTab.url);
+      }
+      
       await chrome.storage.session.set({ lastActiveTabId: selectedTab.id });
-      console.log('[Side Panel] Tab selected:', selectedTab.id, selectedTab.url);
+      console.log('[Side Panel] Tab selected and saved:', selectedTab.id, selectedTab.url);
       await updateTabInfo();
     } catch (e) {
       console.error('[Side Panel] Error selecting tab:', e);
