@@ -5,6 +5,15 @@ let currentTabId = null;
 let clickRecords = [];
 let loadedFromSession = false;
 
+// Open side panel when extension icon is clicked
+chrome.action.onClicked.addListener(async (tab) => {
+  await chrome.sidePanel.open({ windowId: tab.windowId });
+  // Store the tab where user clicked the icon
+  if (tab && tab.id) {
+    await chrome.storage.session.set({ lastActiveTabId: tab.id });
+  }
+});
+
 async function saveToSession() {
   try {
     await chrome.storage.session.set({ clickRecords, isRecording, currentTabId });
@@ -28,6 +37,31 @@ async function loadFromSessionIfNeeded() {
 }
 
 async function getActiveTabId() {
+  // First try to get the last active tab where user clicked the extension icon
+  try {
+    const data = await chrome.storage.session.get(['lastActiveTabId']);
+    if (data.lastActiveTabId) {
+      // Verify the tab still exists
+      const tab = await chrome.tabs.get(data.lastActiveTabId).catch(() => null);
+      if (tab) return data.lastActiveTabId;
+    }
+  } catch (e) {
+    // ignore
+  }
+  
+  // Fallback: find first non-extension tab in current window
+  const allTabs = await chrome.tabs.query({ currentWindow: true });
+  for (const tab of allTabs) {
+    // Skip extension pages (side panel, popup, etc.)
+    if (tab.url && 
+        !tab.url.startsWith('chrome-extension://') && 
+        !tab.url.startsWith('chrome://') &&
+        !tab.url.startsWith('about:')) {
+      return tab.id;
+    }
+  }
+  
+  // Last resort: try active tab
   const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
   return tabs && tabs[0] ? tabs[0].id : null;
 }
@@ -36,8 +70,16 @@ async function startRecording() {
   await loadFromSessionIfNeeded();
   isRecording = true;
   currentTabId = await getActiveTabId();
+  console.log('[Background] Starting recording on tab:', currentTabId);
   if (currentTabId != null) {
-    try { await chrome.tabs.sendMessage(currentTabId, { type: 'START_RECORDING' }); } catch (e) { /* tab may not have content script */ }
+    try { 
+      await chrome.tabs.sendMessage(currentTabId, { type: 'START_RECORDING' }); 
+      console.log('[Background] START_RECORDING message sent successfully');
+    } catch (e) { 
+      console.error('[Background] Failed to send START_RECORDING:', e);
+    }
+  } else {
+    console.warn('[Background] No valid tab found for recording');
   }
   await saveToSession();
 }
@@ -81,6 +123,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           currentTabId = fromTabId; // initialize on first event
         }
         if (isRecording && message.payload) {
+          console.log('[Background] Click captured:', message.payload);
           clickRecords.push(message.payload);
           await saveToSession();
           try {

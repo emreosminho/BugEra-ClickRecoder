@@ -5,11 +5,13 @@
   "description": "Record user clicks on web pages and export as JSON.",
   "action": {
     "default_title": "Click Recorder",
-    "default_popup": "popup.html",
     "default_icon": {
       "16": "8744719.png",
       "32": "8744719.png"
     }
+  },
+  "side_panel": {
+    "default_path": "side_panel.html"
   },
   "icons": {
     "16": "8744719.png",
@@ -20,7 +22,8 @@
   "permissions": [
     "tabs",
     "storage",
-    "webNavigation"
+    "webNavigation",
+    "sidePanel"
   ],
   "host_permissions": [
     "<all_urls>"

@@ -23,9 +23,10 @@ function onDocumentClick(event) {
     const target = (path && path[0] && path[0].nodeType === Node.ELEMENT_NODE) ? path[0] : event.target;
     if (!target || !isRecording) return;
     const payload = buildClickPayload(target);
+    console.log('[Content] Click captured:', payload);
     chrome.runtime.sendMessage({ type: 'CLICK_CAPTURE', payload });
   } catch (e) {
-    // Swallow any unexpected errors to avoid disrupting the page
+    console.error('[Content] Error capturing click:', e);
   }
 }
 
@@ -34,6 +35,7 @@ function startRecording() {
   isRecording = true;
   clickHandlerBound = onDocumentClick;
   document.addEventListener('click', clickHandlerBound, true); // capture phase to catch early
+  console.log('[Content] Click recording started on:', window.location.href);
 }
 
 function stopRecording() {
