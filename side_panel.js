@@ -13,12 +13,24 @@ async function sendMessage(message) {
   });
 }
 
+let lastRecordCount = 0;
+
 function renderList(records) {
+  // Save current scroll position
+  const currentScrollTop = listEl.scrollTop;
+  const wasAtTop = currentScrollTop < 50; // User is near the top
+  
   listEl.innerHTML = '';
   if (!Array.isArray(records) || records.length === 0) {
     listEl.innerHTML = '<div class="empty-state">Henüz tıklama kaydı yok. Kayıt başlatın ve sayfada tıklama yapmaya başlayın.</div>';
+    lastRecordCount = 0;
     return;
   }
+  
+  // Check if new records were added
+  const hasNewRecords = records.length > lastRecordCount;
+  lastRecordCount = records.length;
+  
   // Reverse to show most recent clicks first
   const reversedRecords = [...records].reverse();
   for (const rec of reversedRecords) {
@@ -42,8 +54,14 @@ function renderList(records) {
     li.innerHTML = lines.join('');
     listEl.appendChild(li);
   }
-  // Auto scroll to top to show latest
-  listEl.scrollTop = 0;
+  
+  // Only auto-scroll to top if there are new records AND user was already at top
+  if (hasNewRecords && wasAtTop) {
+    listEl.scrollTop = 0;
+  } else {
+    // Restore previous scroll position
+    listEl.scrollTop = currentScrollTop;
+  }
 }
 
 function escapeHtml(text) {
@@ -143,6 +161,7 @@ btnSave.addEventListener('click', async () => {
 if (btnClear) {
   btnClear.addEventListener('click', async () => {
     console.log('[Side Panel] Clear button clicked');
+    lastRecordCount = 0; // Reset the counter
     await sendMessage({ type: 'CLEAR_RECORDS' });
     console.log('[Side Panel] Records cleared');
     await refreshStateAndUI();
