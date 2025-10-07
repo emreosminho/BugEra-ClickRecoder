@@ -90,7 +90,8 @@ async function updateTabInfo(isRecording) {
             !tab.url.startsWith('chrome://') &&
             !tab.url.startsWith('about:')) {
           console.log('[Side Panel] Found active tab:', tab.id, tab.url);
-          await chrome.storage.session.set({ lastActiveTabId: tab.id });
+          // Notify background.js about the tab
+          await sendMessage({ type: 'SET_ACTIVE_TAB', tabId: tab.id });
           data.lastActiveTabId = tab.id;
           break;
         }
@@ -214,8 +215,9 @@ if (btnSelectTab) {
         console.log('[Side Panel] Using first available web tab:', selectedTab.id, selectedTab.url);
       }
       
-      await chrome.storage.session.set({ lastActiveTabId: selectedTab.id });
-      console.log('[Side Panel] Tab selected and saved:', selectedTab.id, selectedTab.url);
+      // Notify background.js about the tab change
+      const response = await sendMessage({ type: 'SET_ACTIVE_TAB', tabId: selectedTab.id });
+      console.log('[Side Panel] Tab selected and saved:', selectedTab.id, selectedTab.url, 'Response:', response);
       await updateTabInfo();
     } catch (e) {
       console.error('[Side Panel] Error selecting tab:', e);

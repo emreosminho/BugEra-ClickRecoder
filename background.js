@@ -111,6 +111,42 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'GET_STATE':
         sendResponse({ ok: true, isRecording });
         break;
+      case 'SET_ACTIVE_TAB': {
+        // Allow side panel to change the active recording tab
+        const newTabId = message.tabId;
+        if (newTabId && typeof newTabId === 'number') {
+          const oldTabId = currentTabId;
+          console.log('[Background] Changing active tab from', oldTabId, 'to', newTabId);
+          
+          // If recording is active and there's an old tab, stop recording on it
+          if (isRecording && oldTabId && oldTabId !== newTabId) {
+            try {
+              await chrome.tabs.sendMessage(oldTabId, { type: 'STOP_RECORDING' });
+              console.log('[Background] STOP_RECORDING message sent to old tab:', oldTabId);
+            } catch (e) {
+              console.log('[Background] Could not stop recording on old tab (may be closed):', e.message);
+            }
+          }
+          
+          currentTabId = newTabId;
+          await chrome.storage.session.set({ lastActiveTabId: newTabId });
+          
+          // If recording is active, start recording on the new tab
+          if (isRecording) {
+            try {
+              await chrome.tabs.sendMessage(currentTabId, { type: 'START_RECORDING' });
+              console.log('[Background] START_RECORDING message sent to new tab:', currentTabId);
+            } catch (e) {
+              console.error('[Background] Failed to send START_RECORDING to new tab:', e);
+            }
+          }
+          await saveToSession();
+          sendResponse({ ok: true, tabId: currentTabId });
+        } else {
+          sendResponse({ ok: false, error: 'Invalid tab ID' });
+        }
+        break;
+      }
       case 'CLEAR_RECORDS':
         clickRecords = [];
         await saveToSession();
