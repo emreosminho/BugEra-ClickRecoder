@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
-  "name": "Click Recorder",
+  "name": "Cosmic Recorder",
   "version": "1.0.0",
-  "description": "Record user clicks on web pages and export as JSON.",
+  "description": "Record user clicks on web pages and export as JSON with cosmic precision.",
   "action": {
-    "default_title": "Click Recorder",
+    "default_title": "Cosmic Recorder",
     "default_icon": {
       "16": "8744719.png",
       "32": "8744719.png"

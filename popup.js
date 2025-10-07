@@ -69,7 +69,7 @@ btnSave.addEventListener('click', async () => {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `click-records-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+  a.download = `cosmic-records-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
   a.click();
   URL.revokeObjectURL(url);
 });
