@@ -47,6 +47,4 @@ Uzantı aşağıdaki dosyalardan oluşur:
 - `popup.html/js`: Popup arayüzü
 - `side_panel.html/js`: Yan panel arayüzü
 
-## Lisans
 
-Bu proje MIT lisansı altında lisanslanmıştır. Detaylar için [LICENSE](LICENSE) dosyasına bakın.
