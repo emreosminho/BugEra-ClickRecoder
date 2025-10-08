@@ -2,9 +2,35 @@
 
 let isRecording = false;
 let clickHandlerBound = null;
+let isInitialized = false;
+
+// Wait for both DOM and ClickUtils to be ready
+function initializeContentScript() {
+  if (isInitialized) return;
+  
+  if (!window.ClickUtils) {
+    console.log('[Content] Waiting for ClickUtils to load...');
+    setTimeout(initializeContentScript, 50);
+    return;
+  }
+
+  if (document.readyState === 'loading') {
+    console.log('[Content] Waiting for DOM to be ready...');
+    document.addEventListener('DOMContentLoaded', initializeContentScript);
+    return;
+  }
+
+  isInitialized = true;
+  console.log('[Content] Script initialized successfully');
+  chrome.runtime.sendMessage({ type: 'CONTENT_READY' });
+}
 
 function buildClickPayload(target) {
-  const { getElementXPath, getElementCssSelector, clipText } = window.ClickUtils || {};
+  if (!window.ClickUtils) {
+    console.error('[Content] ClickUtils not found! Waiting for utils.js to load...');
+    return;
+  }
+  const { getElementXPath, getElementCssSelector, clipText } = window.ClickUtils;
   const tagName = target.tagName || '';
   const id = target.id || '';
   const className = typeof target.className === 'string' ? target.className : (target.getAttribute && target.getAttribute('class')) || '';
@@ -31,6 +57,12 @@ function onDocumentClick(event) {
 }
 
 function startRecording() {
+  if (!isInitialized) {
+    console.log('[Content] Waiting for initialization before starting recording...');
+    setTimeout(startRecording, 50);
+    return;
+  }
+
   if (isRecording) return;
   isRecording = true;
   clickHandlerBound = onDocumentClick;
@@ -63,6 +95,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
+// Initialize the content script
+initializeContentScript();
+
 // If background indicates recording is already on (e.g., after navigation), start automatically
 try {
   chrome.runtime.sendMessage({ type: 'GET_STATE' }, (res) => {
@@ -71,7 +106,7 @@ try {
     }
   });
 } catch (e) {
-  // ignore
+  console.error('[Content] Error checking recording state:', e);
 }
 
 

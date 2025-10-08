@@ -4,6 +4,7 @@ let isRecording = false;
 let currentTabId = null;
 let clickRecords = [];
 let loadedFromSession = false;
+let contentScriptReady = false;
 
 // Open side panel when extension icon is clicked
 chrome.action.onClicked.addListener(async (tab) => {
@@ -71,7 +72,22 @@ async function startRecording() {
   isRecording = true;
   currentTabId = await getActiveTabId();
   console.log('[Background] Starting recording on tab:', currentTabId);
+  
   if (currentTabId != null) {
+    // Wait for content script to be ready before starting recording
+    let retryCount = 0;
+    const maxRetries = 10;
+    
+    while (!contentScriptReady && retryCount < maxRetries) {
+      console.log('[Background] Waiting for content script to be ready... (attempt', retryCount + 1, 'of', maxRetries, ')');
+      await new Promise(resolve => setTimeout(resolve, 100));
+      retryCount++;
+    }
+    
+    if (!contentScriptReady) {
+      console.warn('[Background] Content script not ready after', maxRetries, 'attempts');
+    }
+    
     try { 
       await chrome.tabs.sendMessage(currentTabId, { type: 'START_RECORDING' }); 
       console.log('[Background] START_RECORDING message sent successfully');
@@ -153,6 +169,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         try { chrome.runtime.sendMessage({ type: 'RECORDS_UPDATED', total: 0 }); } catch (e) {}
         sendResponse({ ok: true });
         break;
+      case 'CONTENT_READY': {
+        console.log('[Background] Content script ready notification received');
+        contentScriptReady = true;
+        sendResponse({ ok: true });
+        break;
+      }
       case 'CLICK_CAPTURE': {
         const fromTabId = sender && sender.tab ? sender.tab.id : null;
         if (currentTabId == null && fromTabId != null) {
