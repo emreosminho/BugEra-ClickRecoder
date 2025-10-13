@@ -23,7 +23,8 @@
     "tabs",
     "storage",
     "webNavigation",
-    "sidePanel"
+    "sidePanel",
+    "scripting"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -35,8 +36,8 @@
     {
       "matches": ["<all_urls>"],
       "js": ["utils.js", "content.js"],
-      "world": "MAIN",
       "run_at": "document_start",
+      "world": "MAIN",
       "all_frames": true
     }
   ],

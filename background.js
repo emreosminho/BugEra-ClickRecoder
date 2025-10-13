@@ -74,21 +74,20 @@ async function startRecording() {
   console.log('[Background] Starting recording on tab:', currentTabId);
   
   if (currentTabId != null) {
-    // Wait for content script to be ready before starting recording
-    let retryCount = 0;
-    const maxRetries = 10;
-    
-    while (!contentScriptReady && retryCount < maxRetries) {
-      console.log('[Background] Waiting for content script to be ready... (attempt', retryCount + 1, 'of', maxRetries, ')');
-      await new Promise(resolve => setTimeout(resolve, 100));
-      retryCount++;
-    }
-    
-    if (!contentScriptReady) {
-      console.warn('[Background] Content script not ready after', maxRetries, 'attempts');
-    }
+    // Clear previous records when starting new recording
+    clickRecords = [];
     
     try { 
+      // Try to inject content scripts if not already present
+      await chrome.scripting.executeScript({
+        target: { tabId: currentTabId },
+        files: ['utils.js', 'content.js']
+      }).catch(() => {
+        // Scripts might already be injected, that's fine
+        console.log('[Background] Content scripts may already be present');
+      });
+      
+      // Start recording
       await chrome.tabs.sendMessage(currentTabId, { type: 'START_RECORDING' }); 
       console.log('[Background] START_RECORDING message sent successfully');
     } catch (e) { 
@@ -97,6 +96,7 @@ async function startRecording() {
   } else {
     console.warn('[Background] No valid tab found for recording');
   }
+  
   await saveToSession();
 }
 
@@ -184,10 +184,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           console.log('[Background] Click captured:', message.payload);
           clickRecords.push(message.payload);
           await saveToSession();
+          // Notify all extension views about the update
           try {
-            chrome.runtime.sendMessage({ type: 'RECORDS_UPDATED', total: clickRecords.length });
+            // Notify popup
+            const views = chrome.extension.getViews({ type: 'popup' });
+            for (const view of views) {
+              view.postMessage({ type: 'RECORDS_UPDATED', records: clickRecords }, '*');
+            }
+            
+            // Notify side panel
+            const sidePanelViews = chrome.extension.getViews({ type: 'side_panel' });
+            for (const view of sidePanelViews) {
+              view.postMessage({ type: 'RECORDS_UPDATED', records: clickRecords }, '*');
+            }
           } catch (e) {
-            // ignore
+            console.error('[Background] Error notifying views:', e);
           }
         }
         sendResponse({ ok: true });
