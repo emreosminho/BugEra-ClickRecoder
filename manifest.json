@@ -4,11 +4,7 @@
   "version": "1.0.0",
   "description": "Record user clicks on web pages and export as JSON with cosmic precision.",
   "action": {
-    "default_title": "Cosmic Recorder",
-    "default_icon": {
-      "16": "32x32.png",
-      "32": "32x32.png"
-    }
+    "default_title": "Cosmic Recorder"
   },
   "side_panel": {
     "default_path": "side_panel.html"
