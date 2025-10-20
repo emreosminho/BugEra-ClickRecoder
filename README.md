@@ -1,4 +1,4 @@
-# BugEra-ClickRecorder
+# CosmicRecoder
 
 Web sayfalarındaki tıklamaları kaydeden ve JSON formatında dışa aktaran bir Chrome uzantısı.
 
