@@ -101,7 +101,12 @@ initializeContentScript();
 // If background indicates recording is already on (e.g., after navigation), start automatically
 try {
   chrome.runtime.sendMessage({ type: 'GET_STATE' }, (res) => {
+    if (chrome.runtime.lastError) {
+      console.log('[Content] Could not reach background:', chrome.runtime.lastError.message);
+      return;
+    }
     if (res && res.isRecording) {
+      console.log('[Content] Recording is active, starting capture');
       startRecording();
     }
   });

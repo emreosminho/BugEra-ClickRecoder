@@ -38,16 +38,18 @@ async function loadFromSessionIfNeeded() {
 }
 
 async function getActiveTabId() {
-  // First try to get the last active tab where user clicked the extension icon
-  try {
-    const data = await chrome.storage.session.get(['lastActiveTabId']);
-    if (data.lastActiveTabId) {
-      // Verify the tab still exists
-      const tab = await chrome.tabs.get(data.lastActiveTabId).catch(() => null);
-      if (tab) return data.lastActiveTabId;
+  // Always get the currently active tab
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  
+  if (tabs && tabs[0]) {
+    const tab = tabs[0];
+    // Check if it's a valid web page
+    if (tab.url && 
+        !tab.url.startsWith('chrome-extension://') && 
+        !tab.url.startsWith('chrome://') &&
+        !tab.url.startsWith('about:')) {
+      return tab.id;
     }
-  } catch (e) {
-    // ignore
   }
   
   // Fallback: find first non-extension tab in current window
@@ -62,9 +64,7 @@ async function getActiveTabId() {
     }
   }
   
-  // Last resort: try active tab
-  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-  return tabs && tabs[0] ? tabs[0].id : null;
+  return null;
 }
 
 async function startRecording() {
@@ -78,20 +78,24 @@ async function startRecording() {
     clickRecords = [];
     
     try { 
-      // Try to inject content scripts if not already present
+      // Inject content scripts
       await chrome.scripting.executeScript({
         target: { tabId: currentTabId },
         files: ['utils.js', 'content.js']
-      }).catch(() => {
-        // Scripts might already be injected, that's fine
-        console.log('[Background] Content scripts may already be present');
       });
+      console.log('[Background] Content scripts injected successfully');
       
-      // Start recording
-      await chrome.tabs.sendMessage(currentTabId, { type: 'START_RECORDING' }); 
-      console.log('[Background] START_RECORDING message sent successfully');
+      // Give content script time to initialize
+      setTimeout(async () => {
+        try {
+          await chrome.tabs.sendMessage(currentTabId, { type: 'START_RECORDING' }); 
+          console.log('[Background] START_RECORDING message sent successfully');
+        } catch (e) {
+          console.error('[Background] Failed to send START_RECORDING:', e);
+        }
+      }, 150);
     } catch (e) { 
-      console.error('[Background] Failed to send START_RECORDING:', e);
+      console.error('[Background] Failed to inject content scripts:', e);
     }
   } else {
     console.warn('[Background] No valid tab found for recording');
@@ -127,42 +131,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'GET_STATE':
         sendResponse({ ok: true, isRecording });
         break;
-      case 'SET_ACTIVE_TAB': {
-        // Allow side panel to change the active recording tab
-        const newTabId = message.tabId;
-        if (newTabId && typeof newTabId === 'number') {
-          const oldTabId = currentTabId;
-          console.log('[Background] Changing active tab from', oldTabId, 'to', newTabId);
-          
-          // If recording is active and there's an old tab, stop recording on it
-          if (isRecording && oldTabId && oldTabId !== newTabId) {
-            try {
-              await chrome.tabs.sendMessage(oldTabId, { type: 'STOP_RECORDING' });
-              console.log('[Background] STOP_RECORDING message sent to old tab:', oldTabId);
-            } catch (e) {
-              console.log('[Background] Could not stop recording on old tab (may be closed):', e.message);
-            }
-          }
-          
-          currentTabId = newTabId;
-          await chrome.storage.session.set({ lastActiveTabId: newTabId });
-          
-          // If recording is active, start recording on the new tab
-          if (isRecording) {
-            try {
-              await chrome.tabs.sendMessage(currentTabId, { type: 'START_RECORDING' });
-              console.log('[Background] START_RECORDING message sent to new tab:', currentTabId);
-            } catch (e) {
-              console.error('[Background] Failed to send START_RECORDING to new tab:', e);
-            }
-          }
-          await saveToSession();
-          sendResponse({ ok: true, tabId: currentTabId });
-        } else {
-          sendResponse({ ok: false, error: 'Invalid tab ID' });
-        }
-        break;
-      }
       case 'CLEAR_RECORDS':
         clickRecords = [];
         await saveToSession();
@@ -218,10 +186,34 @@ chrome.webNavigation.onCommitted.addListener(async (details) => {
     await loadFromSessionIfNeeded();
     if (!isRecording) return;
     if (details.tabId !== currentTabId) return;
-    // Re-signal content script in the navigated frame to start recording
-    await chrome.tabs.sendMessage(details.tabId, { type: 'START_RECORDING' });
+    
+    // Only handle main frame navigations (not iframes)
+    if (details.frameId !== 0) return;
+    
+    console.log('[Background] Navigation detected on recording tab, re-injecting content scripts');
+    
+    // Re-inject content scripts (page reload clears them)
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: details.tabId },
+        files: ['utils.js', 'content.js']
+      });
+      console.log('[Background] Content scripts re-injected after navigation');
+    } catch (e) {
+      console.error('[Background] Failed to re-inject content scripts:', e);
+    }
+    
+    // Give content script a moment to initialize, then start recording
+    setTimeout(async () => {
+      try {
+        await chrome.tabs.sendMessage(details.tabId, { type: 'START_RECORDING' });
+        console.log('[Background] START_RECORDING sent after navigation');
+      } catch (e) {
+        console.error('[Background] Failed to send START_RECORDING after navigation:', e);
+      }
+    }, 100);
   } catch (e) {
-    // ignore
+    console.error('[Background] Error in navigation handler:', e);
   }
 });
 
@@ -231,9 +223,76 @@ chrome.webNavigation.onHistoryStateUpdated.addListener(async (details) => {
     await loadFromSessionIfNeeded();
     if (!isRecording) return;
     if (details.tabId !== currentTabId) return;
+    
+    console.log('[Background] SPA navigation detected, ensuring recording continues');
+    
+    // For SPA navigations, content scripts should still be present
+    // but we re-send START_RECORDING to ensure it's active
     await chrome.tabs.sendMessage(details.tabId, { type: 'START_RECORDING' });
   } catch (e) {
-    // ignore
+    console.error('[Background] Error in SPA navigation handler:', e);
+  }
+});
+
+// Automatic tab tracking: when user switches tabs during recording
+chrome.tabs.onActivated.addListener(async (activeInfo) => {
+  try {
+    await loadFromSessionIfNeeded();
+    
+    // Only track tab changes if recording is active
+    if (!isRecording) return;
+    
+    const newTabId = activeInfo.tabId;
+    const oldTabId = currentTabId;
+    
+    // Check if the new tab is a valid web page
+    const tab = await chrome.tabs.get(newTabId);
+    if (!tab.url || 
+        tab.url.startsWith('chrome-extension://') || 
+        tab.url.startsWith('chrome://') ||
+        tab.url.startsWith('about:')) {
+      console.log('[Background] Skipping tab change - not a valid web page:', tab.url);
+      return;
+    }
+    
+    // If already on this tab, do nothing
+    if (newTabId === oldTabId) return;
+    
+    console.log('[Background] Auto-switching recording from tab', oldTabId, 'to tab', newTabId);
+    
+    // Stop recording on old tab (if exists)
+    if (oldTabId) {
+      try {
+        await chrome.tabs.sendMessage(oldTabId, { type: 'STOP_RECORDING' });
+        console.log('[Background] Stopped recording on old tab:', oldTabId);
+      } catch (e) {
+        console.log('[Background] Could not stop recording on old tab (may be closed):', e.message);
+      }
+    }
+    
+    // Update current tab
+    currentTabId = newTabId;
+    await chrome.storage.session.set({ lastActiveTabId: newTabId });
+    await saveToSession();
+    
+    // Start recording on new tab
+    try {
+      // Inject content scripts if not already present
+      await chrome.scripting.executeScript({
+        target: { tabId: currentTabId },
+        files: ['utils.js', 'content.js']
+      }).catch(() => {
+        console.log('[Background] Content scripts may already be present on new tab');
+      });
+      
+      // Start recording
+      await chrome.tabs.sendMessage(currentTabId, { type: 'START_RECORDING' });
+      console.log('[Background] Started recording on new tab:', currentTabId);
+    } catch (e) {
+      console.error('[Background] Failed to start recording on new tab:', e);
+    }
+  } catch (e) {
+    console.error('[Background] Error in tab activation handler:', e);
   }
 });
 

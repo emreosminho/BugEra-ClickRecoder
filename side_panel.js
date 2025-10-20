@@ -5,7 +5,6 @@ const btnStop = document.getElementById('btnStop');
 const btnSave = document.getElementById('btnSave');
 const listEl = document.getElementById('list');
 const btnClear = document.getElementById('btnClear');
-const btnSelectTab = document.getElementById('btnSelectTab');
 
 async function sendMessage(message) {
   return new Promise((resolve) => {
@@ -93,43 +92,38 @@ async function updateTabInfo(isRecording) {
   if (!tabInfoEl) return;
   
   try {
-    // Get the last active tab ID from storage
-    let data = await chrome.storage.session.get(['lastActiveTabId']);
+    // Get the currently active tab
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
     
-    // If no tab is set, try to find and set the current active tab
-    if (!data.lastActiveTabId) {
-      console.log('[Side Panel] No lastActiveTabId found, searching for active tab...');
-      const tabs = await chrome.tabs.query({ currentWindow: true });
+    if (tabs.length > 0 && tabs[0]) {
+      const tab = tabs[0];
       
-      // Find first non-extension tab
-      for (const tab of tabs) {
-        if (tab.url && 
-            !tab.url.startsWith('chrome-extension://') && 
-            !tab.url.startsWith('chrome://') &&
-            !tab.url.startsWith('about:')) {
-          console.log('[Side Panel] Found active tab:', tab.id, tab.url);
-          // Notify background.js about the tab
-          await sendMessage({ type: 'SET_ACTIVE_TAB', tabId: tab.id });
-          data.lastActiveTabId = tab.id;
-          break;
+      // Check if it's a valid web page
+      if (tab.url && 
+          !tab.url.startsWith('chrome-extension://') && 
+          !tab.url.startsWith('chrome://') &&
+          !tab.url.startsWith('about:')) {
+        const title = tab.title || 'Bilinmeyen';
+        const url = tab.url || '';
+        const displayUrl = url.length > 50 ? url.substring(0, 50) + '...' : url;
+        
+        if (isRecording) {
+          tabInfoEl.innerHTML = `<strong>🎯 Aktif Sekme:</strong> ${escapeHtml(title)}<br><span style="font-size: 10px;">${escapeHtml(displayUrl)}</span><br><span style="color: #86efac; font-size: 10px; margin-top: 4px; display: block;">✓ Kayıt devam ediyor - Sekme değiştirdiğinizde otomatik geçiş yapılır</span>`;
+        } else {
+          tabInfoEl.innerHTML = `<strong>🎯 Aktif Sekme:</strong> ${escapeHtml(title)}<br><span style="font-size: 10px;">${escapeHtml(displayUrl)}</span><br><span style="color: #fde047; font-size: 10px; margin-top: 4px; display: block;">⏸ Kayıt başlatıldığında hangi sekmedeyseniz orası otomatik kaydedilir</span>`;
         }
+        tabInfoEl.style.display = 'block';
+      } else {
+        tabInfoEl.innerHTML = '<strong>⚠️ Chrome özel sayfası</strong><br><span style="font-size: 10px;">Kayıt yapılabilir bir web sayfasına geçin</span>';
+        tabInfoEl.style.display = 'block';
       }
-    }
-    
-    if (data.lastActiveTabId) {
-      const tab = await chrome.tabs.get(data.lastActiveTabId);
-      const title = tab.title || 'Bilinmeyen';
-      const url = tab.url || '';
-      const displayUrl = url.length > 50 ? url.substring(0, 50) + '...' : url;
-      tabInfoEl.innerHTML = `<strong>📍 Kayıt Sekmesi:</strong> ${escapeHtml(title)}<br><span style="font-size: 10px;">${escapeHtml(displayUrl)}</span>`;
-      tabInfoEl.style.display = 'block';
     } else {
-      tabInfoEl.innerHTML = '<strong>⚠️ Kayıt yapılacak sekme bulunamadı</strong><br><span style="font-size: 10px;">Lütfen bir web sayfası açın</span>';
+      tabInfoEl.innerHTML = '<strong>⚠️ Aktif sekme bulunamadı</strong><br><span style="font-size: 10px;">Lütfen bir web sayfası açın</span>';
       tabInfoEl.style.display = 'block';
     }
   } catch (e) {
     console.error('[Side Panel] Error getting tab info:', e);
-    tabInfoEl.innerHTML = '<strong>⚠️ Sekme bilgisi alınamadı</strong><br><span style="font-size: 10px;">Sayfayı yenileyin veya başka bir sekmede deneyin</span>';
+    tabInfoEl.innerHTML = '<strong>⚠️ Sekme bilgisi alınamadı</strong><br><span style="font-size: 10px;">Sayfayı yenileyin</span>';
     tabInfoEl.style.display = 'block';
   }
 }
@@ -193,55 +187,10 @@ setInterval(() => {
   });
 }, 1000);
 
-// Manual tab selection
-if (btnSelectTab) {
-  btnSelectTab.addEventListener('click', async () => {
-    console.log('[Side Panel] Select tab button clicked');
-    try {
-      // First, try to get the currently active tab
-      const activeTabs = await chrome.tabs.query({ active: true, currentWindow: true });
-      
-      let selectedTab = null;
-      
-      // Check if active tab is a valid web page
-      if (activeTabs.length > 0) {
-        const activeTab = activeTabs[0];
-        if (activeTab.url && 
-            !activeTab.url.startsWith('chrome-extension://') && 
-            !activeTab.url.startsWith('chrome://') &&
-            !activeTab.url.startsWith('about:')) {
-          selectedTab = activeTab;
-          console.log('[Side Panel] Active tab is a valid web page:', selectedTab.id, selectedTab.url);
-        }
-      }
-      
-      // If active tab is not valid, find first valid web tab
-      if (!selectedTab) {
-        const allTabs = await chrome.tabs.query({ currentWindow: true });
-        const webTabs = allTabs.filter(tab => 
-          tab.url && 
-          !tab.url.startsWith('chrome-extension://') && 
-          !tab.url.startsWith('chrome://') &&
-          !tab.url.startsWith('about:')
-        );
-        
-        if (webTabs.length === 0) {
-          alert('Kayıt yapılabilecek bir web sayfası sekmesi bulunamadı!\n\nLütfen bir web sayfası açın.');
-          return;
-        }
-        
-        selectedTab = webTabs[0];
-        console.log('[Side Panel] Using first available web tab:', selectedTab.id, selectedTab.url);
-      }
-      
-      // Notify background.js about the tab change
-      const response = await sendMessage({ type: 'SET_ACTIVE_TAB', tabId: selectedTab.id });
-      console.log('[Side Panel] Tab selected and saved:', selectedTab.id, selectedTab.url, 'Response:', response);
-      await updateTabInfo();
-    } catch (e) {
-      console.error('[Side Panel] Error selecting tab:', e);
-      alert('Sekme seçilirken hata oluştu!');
-    }
-  });
-}
+// Periodically update tab info to show current active tab
+setInterval(async () => {
+  const state = await sendMessage({ type: 'GET_STATE' });
+  const isRecording = !!state.isRecording;
+  await updateTabInfo(isRecording);
+}, 500);
 
